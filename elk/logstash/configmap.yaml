@@ -1,0 +1,75 @@
+---
+# Logstash pipeline configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: logging
+data:
+  logstash.conf: |
+    # ── Input: receive logs from Filebeat ──────────────────────────────────────
+    input {
+      beats {
+        port => 5044
+        # Add metadata about which host/pod sent the event
+        add_field => { "[@metadata][pipeline]" => "kubernetes-logs" }
+      }
+    }
+
+    # ── Filter: enrich and parse log events ───────────────────────────────────
+    filter {
+      # Parse JSON logs emitted by our Node.js services (morgan/console)
+      if [message] =~ /^\{/ {
+        json {
+          source => "message"
+          target => "parsed"
+          skip_on_invalid_json => true
+        }
+      }
+
+      # Add Kubernetes metadata fields to top-level for easier Kibana search
+      mutate {
+        add_field => {
+          "service_name" => "%{[kubernetes][labels][app]}"
+          "namespace"    => "%{[kubernetes][namespace]}"
+          "pod_name"     => "%{[kubernetes][pod][name]}"
+          "node_name"    => "%{[kubernetes][node][name]}"
+        }
+      }
+
+      # Drop health-check requests to reduce noise
+      if [request] =~ "/health" {
+        drop { }
+      }
+
+      # Parse timestamp from log messages
+      date {
+        match => ["[@timestamp]", "ISO8601"]
+        target => "@timestamp"
+      }
+    }
+
+    # ── Output: send to Elasticsearch ─────────────────────────────────────────
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch.logging.svc.cluster.local:9200"]
+        # Dynamic index: one index per service per day
+        index => "k8s-logs-%{[service_name]}-%{+YYYY.MM.dd}"
+        action => "index"
+      }
+      # Uncomment for debugging — prints events to Logstash stdout
+      # stdout { codec => rubydebug }
+    }
+---
+# Logstash JVM options
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-jvm-options
+  namespace: logging
+data:
+  jvm.options: |
+    -Xms256m
+    -Xmx512m
+    -XX:+UseG1GC
+    -XX:+UseStringDeduplication

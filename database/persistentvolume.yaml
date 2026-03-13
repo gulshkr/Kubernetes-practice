@@ -1,0 +1,31 @@
+---
+# PersistentVolume for MongoDB data
+# NOTE: hostPath is suitable for single-node learning clusters only.
+# For multi-node bare metal production, use Longhorn or NFS (see docs/database.md).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv
+  labels:
+    type: local
+    app: mongodb
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    # Ensure this directory exists on the worker node before applying
+    path: /mnt/data/mongodb
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                # Replace with your actual worker node hostname
+                - worker-node-1

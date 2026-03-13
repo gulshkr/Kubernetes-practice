@@ -1,0 +1,24 @@
+---
+# MetalLB IPAddressPool — defines the IP range MetalLB controls
+# IMPORTANT: This IP range must be within your LAN subnet and NOT assigned
+# to any other device (router/DHCP excluded). Adjust to match your network.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: production-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    # Update this range to match your bare-metal network
+    - 192.168.1.200-192.168.1.250
+  autoAssign: true
+---
+# L2Advertisement — advertise the IPs via ARP on your LAN
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - production-pool

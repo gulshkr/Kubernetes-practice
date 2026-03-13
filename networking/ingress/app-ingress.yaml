@@ -1,0 +1,74 @@
+---
+# Ingress rules for our microservices and Kibana
+# Prerequisites:
+#   1. NGINX Ingress Controller installed and running
+#   2. MetalLB configured and controller has EXTERNAL-IP
+#   3. DNS or /etc/hosts entries pointing api.example.com and kibana.example.com
+#      to the MetalLB external IP
+#
+# To get the external IP:
+#   kubectl get svc ingress-nginx-controller -n ingress-nginx
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: app
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    # Rewrite path — strip the prefix before forwarding to service
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Enable rate limiting (100 req/s per IP)
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    # Connection timeout
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    # Enable CORS for browser clients
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          # Route /users/* → user-service
+          - path: /users(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80
+          # Route /products/* → product-service
+          - path: /products(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: product-service
+                port:
+                  number: 80
+---
+# Separate Ingress for Kibana (in the logging namespace)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kibana-ingress
+  namespace: logging
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    # Restrict Kibana to specific source IPs in production
+    # nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,192.168.0.0/16"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: kibana.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601

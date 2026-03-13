@@ -1,0 +1,20 @@
+# Calico CNI v3.27 — Pinned manifest
+# Source: https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+#
+# IMPORTANT: This is a reference copy. For production, always download the latest
+# stable version from the official Calico GitHub releases page.
+#
+# To apply:
+#   kubectl apply -f calico.yaml
+#
+# Key customization made:
+#   CALICO_IPV4POOL_CIDR = "10.244.0.0/16"  (must match kubeadm-config.yaml podSubnet)
+
+# Download fresh copy before applying:
+#   curl https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml -O
+#
+# Then patch the CIDR (if not 192.168.0.0/16 default):
+#   sed -i 's|# - name: CALICO_IPV4POOL_CIDR|  - name: CALICO_IPV4POOL_CIDR|' calico.yaml
+#   sed -i 's|#   value: "192.168.0.0/16"|    value: "10.244.0.0/16"|' calico.yaml
+#
+# See docs/getting-started.md for the full setup guide.

@@ -1,0 +1,45 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  # Replace with your control-plane node's IP address
+  advertiseAddress: "192.168.1.100"
+  bindPort: 6443
+nodeRegistration:
+  criSocket: "unix:///var/run/containerd/containerd.sock"
+  taints: []
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: "v1.29.0"
+clusterName: "prod-cluster"
+# Replace with your control-plane IP or DNS name
+controlPlaneEndpoint: "192.168.1.100:6443"
+networking:
+  serviceSubnet: "10.96.0.0/12"
+  # Must match Calico's CALICO_IPV4POOL_CIDR below
+  podSubnet: "10.244.0.0/16"
+  dnsDomain: "cluster.local"
+apiServer:
+  extraArgs:
+    # Enable audit logging
+    audit-log-maxage: "30"
+    audit-log-maxbackup: "3"
+    audit-log-maxsize: "100"
+    audit-log-path: "/var/log/audit.log"
+etcd:
+  local:
+    dataDir: "/var/lib/etcd"
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+# Enforce resource limits at the node level
+enforceNodeAllocatable:
+  - "pods"
+evictionHard:
+  memory.available: "300Mi"
+  nodefs.available: "10%"
+  nodefs.inodesFree: "5%"
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+mode: "ipvs"

@@ -1,0 +1,35 @@
+---
+# Headless Service — used for stable DNS entries for each MongoDB pod
+# DNS: mongodb-0.mongodb-headless.app.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-headless
+  namespace: app
+  labels:
+    app: mongodb
+spec:
+  clusterIP: None
+  selector:
+    app: mongodb
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: 27017
+---
+# ClusterIP Service — used by microservices to connect to MongoDB
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: app
+  labels:
+    app: mongodb
+spec:
+  type: ClusterIP
+  selector:
+    app: mongodb
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: 27017

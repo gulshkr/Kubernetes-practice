@@ -1,0 +1,14 @@
+---
+# StorageClass: uses local-path provisioner for bare-metal
+# For production, consider Longhorn, Rook/Ceph, or NFS
+# See docs/database.md for a comparison.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: false
