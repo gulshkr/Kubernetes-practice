@@ -1,0 +1,55 @@
+# Default values for microservice-chart.
+# This is a YAML-formatted file.
+
+replicaCount: 2
+
+image:
+  repository: user-service
+  pullPolicy: Never
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+env:
+  NODE_ENV: production
+  PORT: 3000
+  MONGO_URI: "mongodb://admin:K8sPassword123@mongodb.app.svc.cluster.local:27017/proddb?authSource=admin"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readiness:
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /users(/|$)(.*)
+          pathType: ImplementationSpecific
