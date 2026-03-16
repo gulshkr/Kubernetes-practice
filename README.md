@@ -103,6 +103,7 @@ We have broken down the learning process into 8 focused guides:
 |:---:|-------|------|
 | 🟢 | [**Getting Started**](docs/getting-started.md) | Prepare your OS and bootstrap your first cluster. |
 | 🏰 | [**Architecture**](docs/architecture.md) | Deep dive into how traffic flows and logs move. |
+| 🗺️ | [**Cloud-to-K8s Terminology Hub**](docs/k8s-vs-cloud.md) | K8s vs AWS (ECS, Beanstalk, etc.) |
 | 🔌 | [**Networking**](docs/networking.md) | Understand Ingress, LoadBalancers, and Network Policies. |
 | 💾 | [**Database**](docs/database.md) | Learn about PersistentVolumes and StatefulSets on bare metal. |
 | 🛠️ | [**Microservices**](docs/services.md) | See how to build, deploy, and scale application code. |
