@@ -32,39 +32,64 @@ charts/microservice-chart/
 
 ---
 
-## 🚀 How to Use the Chart
+---
 
-### 1. Dry Run (Preview)
-Always preview what Helm will generate before actually deploying:
-```bash
-helm install user-service ./charts/microservice-chart --dry-run --debug
+## 🎭 Multi-Service Deployment Strategies
+
+One of the most common questions is: **"If I have 10 services with 10 different images, do I need 10 charts?"**
+
+The answer is **NO**. You use one "Generic Chart" and override the values for each specific service. There are two professional ways to do this:
+
+### Strategy A: Command-Line Overrides (The "Quick" Way)
+When you run `helm install`, you can use the `--set` flag to overwrite any value in `values.yaml` on the fly.
+
+*   **Release 1 (User Service)**:
+    `helm install user-app ./charts/microservice-chart --set image.repository=user-service --set image.tag=v1.2.3`
+*   **Release 2 (Product Service)**:
+    `helm install product-app ./charts/microservice-chart --set image.repository=product-service --set image.tag=v4.5.0`
+
+### Strategy B: Service-Specific Values Files (The "Professional" Way)
+Instead of typing long commands, you create small "Override Files" for each service.
+
+**`user-values.yaml`**
+```yaml
+image:
+  repository: user-service
+  tag: v1.2.3
+service:
+  targetPort: 3000
 ```
 
-### 2. Deploy the User Service
-```bash
-helm install user-service ./charts/microservice-chart \
-  --set image.repository=user-service \
-  --set ingress.hosts[0].paths[0].path="/users(/|$)(.*)" \
-  -n app
+**`product-values.yaml`**
+```yaml
+image:
+  repository: product-service
+  tag: v4.5.0
+service:
+  targetPort: 3001
 ```
 
-### 3. Deploy the Product Service (Re-using the same chart!)
+**Deployment Command:**
 ```bash
-helm install product-service ./charts/microservice-chart \
-  --set image.repository=product-service \
-  --set service.targetPort=3001 \
-  --set ingress.hosts[0].paths[0].path="/products(/|$)(.*)" \
-  -n app
+# Deploying User Service
+helm install user-app ./charts/microservice-chart -f user-values.yaml
+
+# Deploying Product Service
+helm install product-app ./charts/microservice-chart -f product-values.yaml
 ```
 
-### 4. Upgrade or Rollback
-```bash
-# Update the image tag
-helm upgrade user-service ./charts/microservice-chart --set image.tag=v2.0.0 -n app
+---
 
-# Rollback if something went wrong
-helm rollback user-service 1 -n app
-```
+## 🧩 How Helm Tracks These Differently
+When you run `helm install <release-name> ...`, Helm creates a **Release** object in the cluster. 
+1.  **Release Name**: This is the unique ID (e.g., `user-app`).
+2.  **Namespace**: You can even deploy the same image to different namespaces (e.g., `dev` vs `prod`).
+
+Helm mixes your **Templates** + **Default Values** + **Your Overrides** to generate the final YAML that gets sent to Kubernetes.
+
+---
+
+## 🚀 Lifecycle Management
 
 ---
 
