@@ -1,41 +1,67 @@
-# RBAC — Access Control
+# Kubernetes Security: RBAC & Identity
 
-## Principle of Least Privilege
+In Kubernetes, security is based on **Role-Based Access Control (RBAC)**. This guide explains how we govern "Who" can do "What" in our cluster.
 
-Every service runs with a dedicated **ServiceAccount** and only has the permissions it absolutely needs.
+---
 
-## Service Accounts
+## 🆔 The Three Pillars of RBAC
 
-| ServiceAccount | Namespace | Used By |
-|---------------|-----------|---------|
-| `user-service-sa` | app | user-service pods |
-| `product-service-sa` | app | product-service pods |
-| `filebeat` | logging | filebeat DaemonSet pods |
+To understand RBAC, you must understand three core concepts:
 
-## Permissions Summary
+1.  **Subjects**: The "Who". This can be a human user or, more commonly, a **ServiceAccount** (an identity for a pod).
+2.  **Roles**: The "What". A list of permissions (e.g., "can read pods", "can delete services").
+3.  **RoleBindings**: The "Bridge". This connects a Subject to a Role, effectively granting the permissions.
 
-### App Services (`user-service-sa`, `product-service-sa`)
+---
 
+## 🤖 ServiceAccounts: Pod Identities
+
+By default, every namespace has a `default` service account. However, in production, we create specific service accounts for our apps.
+
+*   **Why?**: If your `user-service` is compromised, the attacker only gets the permissions of that specific service account, not the whole cluster.
+*   **Usage**: In `deployment.yaml`, we specify `serviceAccountName: user-service-sa`.
+
+---
+
+## 🏗️ Roles vs. ClusterRoles
+
+| Type | Scope | Usage |
+| :--- | :--- | :--- |
+| **Role** | Namespace | App-specific permissions (e.g., `app` namespace only). |
+| **ClusterRole** | Cluster-wide | Infrastructure permissions (e.g., Filebeat reading logs from all nodes). |
+
+**Principle of Least Privilege**: Never use a ClusterRole where a Role will suffice. Our `user-service` only has the `Role` permissions it needs to run; it cannot see or touch the `logging` or `kube-system` namespaces.
+
+---
+
+## 🔒 Security Best Practices in our YAMLs
+
+Beyond RBAC, we've applied **SecurityContext** settings in our manifests:
+
+1.  **RunAsNonRoot**: Our pods are configured to run as a non-privileged user, not as the root user. This prevents container escape attacks.
+2.  **ReadOnlyRootFilesystem**: Where possible, we make the container's filesystem read-only to prevent attackers from installing malicious tools.
+3.  **AllowPrivilegeEscalation: false**: Prevents a process from gaining more privileges than its parent process.
+
+---
+
+## 🛠️ Auditing & Debugging
+
+```bash
+# Check if a ServiceAccount can do something
+kubectl auth can-i get pods --as=system:serviceaccount:app:user-service-sa -n app
+
+# List all roles in a namespace
+kubectl get roles,rolebindings -n app
+
+# Describe a specific role to see its rules
+kubectl describe role <role-name> -n app
 ```
-Role: app-service-role (namespace-scoped)
-  - configmaps: get, list, watch
-  - secrets: get, list, watch
-  - pods: get, list
-```
-
-Rationale: The services need to read their own ConfigMaps and Secrets. They do NOT need to create or delete any resources.
-
-### Filebeat (`filebeat` — cluster-scoped)
-
-```
-ClusterRole: filebeat
-  - namespaces: get, list, watch
+s: get, list, watch
   - pods: get, list, watch
   - nodes: get, list, watch
   - replicasets: get, list, watch
 ```
 
-Rationale: Filebeat's Kubernetes autodiscover needs to list pods across all namespaces to build the metadata index.
 
 ## Apply RBAC
 

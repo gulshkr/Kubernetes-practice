@@ -1,129 +1,67 @@
-# Microservices API Reference
+# Microservices in Kubernetes: Deep Dive
 
-Both services are accessible via the NGINX Ingress Controller at `api.example.com`.
-
----
-
-## User Service
-
-**Base URL:** `http://api.example.com/users`  
-**Port (internal):** `3000`  
-**Namespace:** `app`
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/users/health` | Health check (used by Kubernetes probes) |
-| `GET` | `/users` | List all users |
-| `GET` | `/users/:id` | Get user by MongoDB ID |
-| `POST` | `/users` | Create a new user |
-| `DELETE` | `/users/:id` | Delete a user |
-
-### POST /users — Request Body
-
-```json
-{
-  "name": "Alice Smith",
-  "email": "alice@example.com",
-  "role": "user"
-}
-```
-
-**Fields:**
-- `name` (required) — display name
-- `email` (required) — unique email address
-- `role` (optional, default `user`) — `user` or `admin`
-
-### Example Responses
-
-#### GET /users/health
-```json
-{ "status": "ok", "service": "user-service", "db": "connected" }
-```
-
-#### GET /users
-```json
-{
-  "service": "user-service",
-  "count": 2,
-  "data": [
-    { "_id": "65a1...", "name": "Alice", "email": "alice@example.com", "role": "user", "createdAt": "..." }
-  ]
-}
-```
-
-#### POST /users — 201 Created
-```json
-{ "service": "user-service", "data": { "_id": "...", "name": "Alice", ... } }
-```
+This guide explains how our microservices interact with the Kubernetes orchestrator to ensure high availability, scalability, and performance.
 
 ---
 
-## Product Service
+## ⚡ Resource Management: Requests vs. Limits
 
-**Base URL:** `http://api.example.com/products`  
-**Port (internal):** `3001`  
-**Namespace:** `app`
+Every service in this repo defines explicit resource requirements. This is critical for cluster stability.
 
-### Endpoints
+| Type | Purpose | Analogy |
+| :--- | :--- | :--- |
+| **Requests** | The minimum resources a pod needs to start. The scheduler uses this to find a node. | The "Minimum Wage" guaranteed to the pod. |
+| **Limits** | The maximum resources a pod is allowed to consume. CPU is throttled; Memory kills the pod (OOM). | The "Speed Limit" to prevent one pod from crashing the whole node. |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/products/health` | Health check |
-| `GET` | `/products` | List all products (optional `?category=` filter) |
-| `GET` | `/products/:id` | Get product by ID |
-| `POST` | `/products` | Create a product |
-| `PUT` | `/products/:id` | Update a product |
-| `DELETE` | `/products/:id` | Delete a product |
-
-### POST /products — Request Body
-
-```json
-{
-  "name": "Widget Pro",
-  "price": 29.99,
-  "description": "High-quality widget",
-  "stock": 150,
-  "category": "hardware"
-}
-```
+**Why this matters**: Without requests, the scheduler might over-provision a node, leading to "noisy neighbor" issues where one service starves others of CPU.
 
 ---
 
-## Building & Pushing Docker Images
+## 🩺 Health Probes: The Three Tiers
 
-```bash
-# Build images
-docker build -t your-registry/user-service:1.0.0 ./services/user-service
-docker build -t your-registry/product-service:1.0.0 ./services/product-service
+We use three different types of probes to manage the lifecycle of our Node.js services:
 
-# Push to registry
-docker push your-registry/user-service:1.0.0
-docker push your-registry/product-service:1.0.0
-```
+### 1. Startup Probe
+*   **Purpose**: Protects slow-starting apps.
+*   **Behavior**: Kubernetes waits for this to pass before starting liveness/readiness probes.
+*   **Value**: Prevents a pod from being killed before it has finished its initial database connection or cache warming.
 
-Then update `image:` in each `k8s/deployment.yaml` to match your registry URL.
+### 2. Readiness Probe
+*   **Purpose**: Tells the Service/Ingress when to send traffic.
+*   **Behavior**: If this fails, the pod is removed from the Service endpoints but NOT killed.
+*   **Value**: Ensures users don't see `502 Gateway Error` during a deployment or if the app is momentarily overloaded.
 
-## Environment Variables
+### 3. Liveness Probe
+*   **Purpose**: Tells Kubernetes when to restart a pod.
+*   **Behavior**: If this fails multiple times, the kubelet kills the container and starts a new one.
+*   **Value**: Automatically fixes "deadlocked" apps that are running but not responding to requests.
 
-| Variable | Description | Source |
-|----------|-------------|--------|
-| `PORT` | HTTP listen port | ConfigMap |
-| `NODE_ENV` | Node environment | ConfigMap |
-| `MONGO_URI` | Full MongoDB connection string | Secret |
+---
 
-## Rolling Updates
+## 📈 Auto-scaling Logic (HPA)
 
-```bash
-# Update image tag
-kubectl set image deployment/user-service \
-  user-service=your-registry/user-service:1.1.0 \
-  -n app
+The **Horizontal Pod Autoscaler (HPA)** automatically adjusts the number of replicas based on real-time metrics.
 
-# Monitor rollout
-kubectl rollout status deployment/user-service -n app
+*   **Mechanism**: The HPA queries the Metrics Server every 15 seconds.
+*   **Algorithm**: `Desired Replicas = ceil[current replicas * (current metric / target metric)]`
+*   **Cooldown**: There is a default 5-minute "scale-down" delay to prevent "flapping" (rapidly adding and removing pods).
 
-# Rollback if needed
-kubectl rollout undo deployment/user-service -n app
-```
+---
+
+## 🛠️ Efficient Docker-to-K8s Workflow
+
+1.  **Multi-stage Builds**: Our Dockerfiles use a `build` stage to install dev dependencies and a `production` stage to run the app. This reduces image size from ~800MB to ~150MB.
+2.  **ImagePullPolicy: Always**: In production, we use versioned tags (e.g., `v1.0.1`). In local dev/testing, we use `:local` with `imagePullPolicy: Never` to skip the registry.
+3.  **Config Injection**: Apps NEVER hardcode database URLs. We inject them via Environment Variables sourced from ConfigMaps and Secrets.
+
+---
+
+## 🔄 Deployment Strategies: Rolling Updates
+
+When you run `kubectl apply`, Kubernetes performs a **Rolling Update**:
+1.  It starts a new pod with the new version.
+2.  It waits for the **Readiness Probe** to pass.
+3.  It terminates one old pod.
+4.  It repeats until all pods are updated.
+
+This ensures **Zero Downtime** deployments!

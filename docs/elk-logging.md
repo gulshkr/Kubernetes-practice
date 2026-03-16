@@ -1,24 +1,57 @@
-# ELK Stack — Centralised Logging
+# ELK Stack —# Centralized Observability: The ELK Stack
 
-## Overview
+In a distributed system, logging directly to a file is useless. We need a way to aggregate, search, and visualize logs from hundreds of pods in one place.
 
-The ELK stack (Elasticsearch + Logstash + Kibana) provides a centralised logging solution. **Filebeat** runs as a DaemonSet on every node and ships logs automatically.
+---
 
-## Log Flow
+## 🏗️ The Log Pipeline: Step-by-Step
 
-```
-Node.js stdout/stderr
-    ↓
-/var/log/containers/<pod-id>.log       (written by kubelet)
-    ↓
-Filebeat DaemonSet                      (reads and ships)
-    ↓ beats protocol (port 5044)
-Logstash                                (parse, enrich, filter)
-    ↓ HTTP
-Elasticsearch                           (store logs)
-    ↓
-Kibana                                  (search & visualise)
-```
+### 1. Filebeat (The Shipper)
+Running as a **DaemonSet**, Filebeat ensures an agent is present on every node. 
+*   **Harvesting**: It tails the JSON log files created by Docker/containerd.
+*   **Backpressure**: If Logstash is slow, Filebeat slows down its reading to prevent crashing the node.
+
+### 2. Logstash (The Processor)
+Logstash is where the "magic" happens. Our configuration (`elk/logstash/configmap.yaml`) performs three critical tasks:
+*   **JSON Parsing**: It turns the raw log string into searchable JSON fields.
+*   **Metadata Enrichment**: It talks to the Kubernetes API to add tags like `kubernetes.pod.name`, `kubernetes.namespace`, and node details to every log entry.
+*   **Filtering**: It drops "noise" (e.g., repeating health check logs) to save disk space.
+
+### 3. Elasticsearch (The Storage)
+Elasticsearch stores the processed logs. 
+*   **Index Sharding**: Logs are stored in daily indices (e.g., `k8s-logs-2024.03.16`). This makes deleting old logs (Index Lifecycle Management) very simple.
+*   **Full-Text Search**: Powered by the Lucene engine, it allows for near-instant searching across millions of log lines.
+
+---
+
+## 🚀 Resource Tuning & Stability
+
+ELK is resource-heavy. We've applied specific "Lean K8s" optimizations:
+
+### JVM Heap Management
+We explicitly set the Java Heap space (`ES_JAVA_OPTS` and `LS_JAVA_OPTS`) to exactly 50% of the container's RAM limit. 
+*   **Reason**: If the Heap is too small, you get `OutOfMemoryError`. If it's too large, the OS might kill the container (OOMKill) because it needs RAM for its own processes.
+
+### Storage Persistence
+Elasticsearch is a stateful app. In our setup, it uses a **StatefulSet** with a **PersistentVolume**. If the ES pod restarts, it doesn't lose your history.
+
+---
+
+## 🔍 Using Kibana Like a Pro
+
+1.  **Index Patterns**: Your first step in Kibana is to create an Index Pattern for `k8s-logs-*`.
+2.  **Discover**: Use the KQL (Kibana Query Language) to filter:
+    *   `kubernetes.namespace : "app"`
+    *   `message : "error" AND kubernetes.labels.app : "user-service"`
+3.  **Dashboards**: You can build real-time "Error Rate" charts to see if a new deployment is causing issues before users complain.
+
+---
+
+## 🛠️ Maintenance & Debugging
+
+*   **Check pipeline health**: `kubectl logs -l app=logstash -n logging`
+*   **Check ES health**: `curl -X GET "elasticsearch:9200/_cluster/health?pretty"` (from inside the cluster)
+*   **Cleanup**: Use a CronJob to run a tool like **Curator** to delete logs older than 7 or 14 days.
 
 ---
 

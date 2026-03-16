@@ -8,12 +8,64 @@ Internet
    ▼
 MetalLB LoadBalancer IP (192.168.1.200-250)
    │
-   ▼
-NGINX Ingress Controller (ingress-nginx namespace)
-   │
-   ├── api.example.com/users     → user-service (app ns)
-   ├── api.example.com/products  → product-service (app ns)
-   └── kibana.example.com        → kibana (logging ns)
+# Production Networking & Security
+
+Kubernetes networking on bare-metal requires careful planning for external access and internal isolation. This guide explains our "Defense in Depth" strategy.
+
+---
+
+## 🚦 External Traffic: The NGINX Ingress Controller
+
+While MetalLB provides the IP address, the **NGINX Ingress Controller** acts as the intelligent director for all HTTP/HTTPS traffic.
+
+### Why NGINX?
+*   **Layer 7 Routing**: It routes traffic based on the domain name (`api.example.com`) and the URL path (`/users`).
+*   **CORS Management**: We've configured global CORS policies to allow frontend applications to safely call the API.
+*   **Rate Limiting**: Protects your services from "noisy" clients or DDoS attempts at the edge.
+
+### Ingress Lifecycle
+1.  **Ingress Resource**: You define a rule in YAML (e.g., `networking/ingress/app-ingress.yaml`).
+2.  **Controller Sync**: NGINX watches the Kubernetes API and automatically rebuilds its `nginx.conf` when rules change.
+3.  **Traffic Admission**: NGINX terminates the connection and proxies it to the service inside the cluster.
+
+---
+
+## 🛡️ Internal Security: NetworkPolicies
+
+By default, every pod in Kubernetes can talk to every other pod. In a production cluster, this is a security risk. We use **NetworkPolicies** to enforce "Zero Trust".
+
+### Our Strategy: Default Deny
+We apply a policy that blocks ALL ingress traffic to our namespaces, then we selectively "punch holes" for allowed traffic:
+
+| Policy | Allowed Source | Allowed Destination | Reason |
+| :--- | :--- | :--- | :--- |
+| **Ingress Allow** | NGINX Controller | Microservices | Allow external API calls. |
+| **DB Access** | Microservices | MongoDB | Allow apps to query the database. |
+| **Log Shippings** | Microservices | Logstash | Allow apps to send logs. |
+
+**Important**: Calico (the CNI) is responsible for actually blocking the packets at the Linux kernel level.
+
+---
+
+## 🔒 SSL/TLS & Certificates
+
+For production, all traffic MUST be encrypted (HTTPS).
+
+### The Recommendation: cert-manager
+While not included in this repo to keep it lightweight, the standard way to handle TLS in Kubernetes is **cert-manager**.
+*   **Let's Encrypt**: Automatically issues free SSL certificates.
+*   **Rotation**: Automatically renews certificates before they expire.
+*   **Usage**: You simply add an annotation to your Ingress resource: `cert-manager.io/cluster-issuer: letsencrypt-prod`.
+
+---
+
+## 📡 DNS for Bare-Metal
+
+Since we are on bare-metal, you have three options for DNS:
+
+1.  **Public DNS**: Point `api.yourdomain.com` to your node's physical IP (or MetalLB VIP).
+2.  **Local DNS Server**: Use a tool like **Pi-hole** or **CoreDNS** on your LAN to point names to IPs.
+3.  **Local Hosts File**: (For testing) Update `/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`.
 ```
 
 ---
@@ -57,7 +109,6 @@ kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":
 ```bash
 kubectl get svc ingress-nginx-controller -n ingress-nginx
 # NAME                      TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)
-# ingress-nginx-controller  LoadBalancer   10.96.5.10     192.168.1.200    80:30080/TCP,443:30443/TCP
 ```
 
 ### Useful Annotations
